@@ -10,6 +10,21 @@
 #import "SDWebImageCompat.h"
 #import "SDWebImageOperation.h"
 
+
+@class SDWebImageDownloader;
+@protocol SDWebImageDownloaderDelegate<NSObject>
+@optional
+
+-(NSURL*)downloader:(SDWebImageDownloader*)downloader mediaURLforURL:(NSURL *)url;
+-(NSMutableURLRequest*)downloader:(SDWebImageDownloader*)downloader requestForURL:(NSURL*)url;
+-(NSData*)downloader:(SDWebImageDownloader*)downloader transformResponseData:(NSData*)data withURL:(NSURL*)url;
+-(void)downloader:(SDWebImageDownloader*)downloader resonseError:(NSError*)error withURL:(NSURL*)url;
+
+-(void)downloader:(SDWebImageDownloader*)downloader generateImageByDataURL:(NSURL*)dataURL forImageURL:(NSURL*)imageURL success:(void(^)(UIImage *,NSError *))block;
+
+@end
+
+
 typedef NS_OPTIONS(NSUInteger, SDWebImageDownloaderOptions) {
     SDWebImageDownloaderLowPriority = 1 << 0,
     SDWebImageDownloaderProgressiveDownload = 1 << 1,
@@ -76,6 +91,12 @@ typedef void(^SDWebImageDownloaderCompletedBlock)(UIImage *image, NSData *data, 
  * Asynchronous downloader dedicated and optimized for image loading.
  */
 @interface SDWebImageDownloader : NSObject
+
+
+@property (nonatomic,weak)id<SDWebImageDownloaderDelegate> delegate;
+
+@property (nonatomic) BOOL useDiskCache;
+
 
 @property (assign, nonatomic) NSInteger maxConcurrentDownloads;
 

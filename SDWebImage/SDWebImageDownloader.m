@@ -8,7 +8,11 @@
 
 #import "SDWebImageDownloader.h"
 #import "SDWebImageDownloaderOperation.h"
+#import "SDWebImageDecoder.h"
+#import "UIImage+MultiFormat.h"
 #import <ImageIO/ImageIO.h>
+#import "SDMediaDiskCache.h"
+
 
 NSString *const SDWebImageDownloadStartNotification = @"SDWebImageDownloadStartNotification";
 NSString *const SDWebImageDownloadStopNotification = @"SDWebImageDownloadStopNotification";
@@ -104,18 +108,47 @@ static NSString *const kCompletedCallbackKey = @"completed";
     return _downloadQueue.maxConcurrentOperationCount;
 }
 
-- (id <SDWebImageOperation>)downloadImageWithURL:(NSURL *)url options:(SDWebImageDownloaderOptions)options progress:(void (^)(NSInteger, NSInteger))progressBlock completed:(void (^)(UIImage *, NSData *, NSError *, BOOL))completedBlock {
+- (id <SDWebImageOperation>)downloadImageWithURL:(NSURL *)imageURL options:(SDWebImageDownloaderOptions)options progress:(void (^)(NSInteger, NSInteger))progressBlock completed:(void (^)(UIImage *, NSData *, NSError *, BOOL))completedBlock {
     __block SDWebImageDownloaderOperation *operation;
     __weak SDWebImageDownloader *wself = self;
+    
+    NSURL * url=imageURL;
+    if (self.delegate && [self.delegate respondsToSelector:@selector(downloader:mediaURLforURL:)]) {
+        url=[self.delegate downloader:self mediaURLforURL:imageURL];
+    }
 
     [self addProgressCallback:progressBlock andCompletedBlock:completedBlock forURL:url createCallback:^{
+        
+        if (wself.useDiskCache) {
+            NSURL * dataURL=[[SDMediaDiskCache sharedDiskCache] dataURL:url];
+            if (dataURL) {
+                if (wself.delegate&&[wself.delegate respondsToSelector:@selector(downloader:generateImageByDataURL:forImageURL:success:)]) {
+                    [wself.delegate downloader:wself generateImageByDataURL:dataURL forImageURL:imageURL success:^(UIImage * image, NSError * error) {
+                        [wself doComplete:url image:image data:nil error:error finished:YES];
+                    }];
+                }else{
+                    NSData * data =[NSData dataWithContentsOfURL:dataURL];
+                    UIImage * image=[UIImage imageWithData:data];
+                    [wself doComplete:url image:image  data:data error:nil finished:YES];
+                }
+                return;
+            }
+        }
+        
         NSTimeInterval timeoutInterval = wself.downloadTimeout;
         if (timeoutInterval == 0.0) {
             timeoutInterval = 15.0;
         }
 
         // In order to prevent from potential duplicate caching (NSURLCache + SDImageCache) we disable the cache for image requests if told otherwise
-        NSMutableURLRequest *request = [[NSMutableURLRequest alloc] initWithURL:url cachePolicy:(options & SDWebImageDownloaderUseNSURLCache ? NSURLRequestUseProtocolCachePolicy : NSURLRequestReloadIgnoringLocalCacheData) timeoutInterval:timeoutInterval];
+        NSMutableURLRequest *request = nil;
+        if (wself.delegate && [wself.delegate respondsToSelector:@selector(downloader:requestForURL:)]) {
+            request=[wself.delegate downloader:wself requestForURL:url];
+        }else{
+            request = [[NSMutableURLRequest alloc] initWithURL:url];
+        }
+        request.cachePolicy=(options & SDWebImageDownloaderUseNSURLCache ? NSURLRequestUseProtocolCachePolicy : NSURLRequestReloadIgnoringLocalCacheData);
+        request.timeoutInterval=timeoutInterval;
         request.HTTPShouldHandleCookies = (options & SDWebImageDownloaderHandleCookies);
         request.HTTPShouldUsePipelining = YES;
         if (wself.headersFilter) {
@@ -124,6 +157,8 @@ static NSString *const kCompletedCallbackKey = @"completed";
         else {
             request.allHTTPHeaderFields = wself.HTTPHeaders;
         }
+        
+        
         operation = [[SDWebImageDownloaderOperation alloc] initWithRequest:request
                                                                    options:options
                                                                   progress:^(NSInteger receivedSize, NSInteger expectedSize) {
@@ -138,13 +173,50 @@ static NSString *const kCompletedCallbackKey = @"completed";
                                                                  completed:^(UIImage *image, NSData *data, NSError *error, BOOL finished) {
                                                                      if (!wself) return;
                                                                      SDWebImageDownloader *sself = wself;
-                                                                     NSArray *callbacksForURL = [sself callbacksForURL:url];
+
                                                                      if (finished) {
-                                                                         [sself removeCallbacksForURL:url];
-                                                                     }
-                                                                     for (NSDictionary *callbacks in callbacksForURL) {
-                                                                         SDWebImageDownloaderCompletedBlock callback = callbacks[kCompletedCallbackKey];
-                                                                         if (callback) callback(image, data, error, finished);
+                                                                         if (error) {
+                                                                             if (sself.delegate&&[sself.delegate respondsToSelector:@selector(downloader:resonseError:withURL:)]) {
+                                                                                 [sself.delegate downloader:sself resonseError:error withURL:url];
+                                                                             }
+                                                                             [sself doComplete:url image:nil data:nil error:error finished:YES];
+
+                                                                         }else{
+                                                                             
+                                                                             if (sself.delegate&&[sself.delegate respondsToSelector:@selector(downloader:transformResponseData:withURL:)]) {
+                                                                                 data=[sself.delegate downloader:sself transformResponseData:data withURL:url];
+                                                                             }
+                                                                             NSURL * dataURL=nil;
+                                                                             if(sself.useDiskCache){
+                                                                                 dataURL=[[SDMediaDiskCache sharedDiskCache] store:data forKey:url];
+                                                                             }
+                                                                             if (sself.delegate&&[sself.delegate respondsToSelector:@selector(downloader:generateImageByDataURL:forImageURL:success:)]) {
+                                                                                 
+                                                                                 [sself.delegate downloader:sself generateImageByDataURL:dataURL  forImageURL:imageURL success:^(UIImage * img, NSError * err) {
+                                                                                     [sself doComplete:url image:img data:nil error:nil finished:YES];
+
+                                                                                 }];
+                                                                             }else{
+                                                                                 UIImage *img = [UIImage sd_imageWithData:data];
+                                                                                 img =  SDScaledImageForKey(url.absoluteString, img);
+                                                                                 
+                                                                                 if (!img.images) // Do not force decod animated GIFs
+                                                                                 {
+                                                                                     img = [UIImage decodedImageWithImage:img];
+                                                                                 }
+                                                                                 
+                                                                                 if (CGSizeEqualToSize(img.size, CGSizeZero)) {
+                                                                                     error=[NSError errorWithDomain:@"SDWebImageErrorDomain" code:0 userInfo:@{NSLocalizedDescriptionKey : @"Downloaded image has 0 pixels"}];
+                                                                                 }
+
+                                                                                 [sself doComplete:url image:img data:data error:error finished:YES];
+
+                                                                             }
+
+                                                                         }
+
+                                                                     }else{
+                                                                         [sself doComplete:url image:image data:data error:error finished:NO];
                                                                      }
                                                                  }
                                                                  cancelled:^{
@@ -166,6 +238,21 @@ static NSString *const kCompletedCallbackKey = @"completed";
     }];
 
     return operation;
+}
+
+-(void)doComplete:(NSURL*)url image:(UIImage*)image data:(NSData*)data error:(NSError*)error finished:(BOOL)finished{
+    NSArray *callbacksForURL = [self callbacksForURL:url];
+    if (finished)
+    {
+        [self removeCallbacksForURL:url];
+    }
+    for (NSDictionary *callbacks in callbacksForURL)
+    {
+        SDWebImageDownloaderCompletedBlock callback = callbacks[kCompletedCallbackKey];
+        if (callback) callback(image, data, error, finished);
+    }
+    
+    
 }
 
 - (void)addProgressCallback:(void (^)(NSInteger, NSInteger))progressBlock andCompletedBlock:(void (^)(UIImage *, NSData *data, NSError *, BOOL))completedBlock forURL:(NSURL *)url createCallback:(void (^)())createCallback {
