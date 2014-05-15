@@ -18,7 +18,7 @@
 
 @property(nonatomic)NSCache * cache;
 @property (strong, nonatomic) NSString *diskCachePath;
-@property (strong, nonatomic) dispatch_queue_t ioQueue;
+@property (nonatomic) dispatch_queue_t ioQueue;
 
 @end
 
