@@ -16,9 +16,11 @@
 @optional
 
 -(NSURL*)downloader:(SDWebImageDownloader*)downloader mediaURLforURL:(NSURL *)url;
+-(NSURL*)downloader:(SDWebImageDownloader*)downloader mediaDataURLforURL:(NSURL *)url;
+
 -(NSMutableURLRequest*)downloader:(SDWebImageDownloader*)downloader requestForURL:(NSURL*)url;
 -(NSData*)downloader:(SDWebImageDownloader*)downloader transformResponseData:(NSData*)data withURL:(NSURL*)url;
--(void)downloader:(SDWebImageDownloader*)downloader resonseError:(NSError*)error withURL:(NSURL*)url;
+-(void)downloader:(SDWebImageDownloader*)downloader resonseError:(NSError*)error dataURL:(NSURL*)dataURL  withURL:(NSURL*)url;
 
 -(void)downloader:(SDWebImageDownloader*)downloader generateImageByDataURL:(NSURL*)dataURL forImageURL:(NSURL*)imageURL success:(void(^)(UIImage *,NSError *))block;
 

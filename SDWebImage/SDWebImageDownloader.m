@@ -119,20 +119,29 @@ static NSString *const kCompletedCallbackKey = @"completed";
 
     [self addProgressCallback:progressBlock andCompletedBlock:completedBlock forURL:url createCallback:^{
         
+        NSURL * dataURL=nil;
         if (wself.useDiskCache) {
-            NSURL * dataURL=[[SDMediaDiskCache sharedDiskCache] dataURL:url];
-            if (dataURL) {
-                if (wself.delegate&&[wself.delegate respondsToSelector:@selector(downloader:generateImageByDataURL:forImageURL:success:)]) {
-                    [wself.delegate downloader:wself generateImageByDataURL:dataURL forImageURL:imageURL success:^(UIImage * image, NSError * error) {
+            dataURL=[[SDMediaDiskCache sharedDiskCache] dataURL:url];
+        }
+        if (!dataURL&&wself.delegate&&[wself.delegate respondsToSelector:@selector(downloader:mediaDataURLforURL:)]) {
+            dataURL=[wself.delegate downloader:wself mediaDataURLforURL:url];
+        }
+        if (dataURL) {
+            if (wself.delegate&&[wself.delegate respondsToSelector:@selector(downloader:generateImageByDataURL:forImageURL:success:)]) {
+                [wself.delegate downloader:wself generateImageByDataURL:dataURL forImageURL:imageURL success:^(UIImage * image, NSError * error) {
+                    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
                         [wself doComplete:url image:image data:nil error:error finished:YES];
-                    }];
-                }else{
-                    NSData * data =[NSData dataWithContentsOfURL:dataURL];
-                    UIImage * image=[UIImage imageWithData:data];
+                    });
+                }];
+            }else{
+                NSData * data =[NSData dataWithContentsOfURL:dataURL];
+                UIImage * image=[UIImage imageWithData:data];
+                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
                     [wself doComplete:url image:image  data:data error:nil finished:YES];
-                }
-                return;
+                });
+                
             }
+            return;
         }
         
         NSTimeInterval timeoutInterval = wself.downloadTimeout;
@@ -176,8 +185,8 @@ static NSString *const kCompletedCallbackKey = @"completed";
 
                                                                      if (finished) {
                                                                          if (error) {
-                                                                             if (sself.delegate&&[sself.delegate respondsToSelector:@selector(downloader:resonseError:withURL:)]) {
-                                                                                 [sself.delegate downloader:sself resonseError:error withURL:url];
+                                                                             if (sself.delegate&&[sself.delegate respondsToSelector:@selector(downloader:resonseError:dataURL:withURL:)]) {
+                                                                                 [sself.delegate downloader:sself resonseError:error dataURL:nil withURL:url];
                                                                              }
                                                                              [sself doComplete:url image:nil data:nil error:error finished:YES];
 
@@ -186,13 +195,16 @@ static NSString *const kCompletedCallbackKey = @"completed";
                                                                              if (sself.delegate&&[sself.delegate respondsToSelector:@selector(downloader:transformResponseData:withURL:)]) {
                                                                                  data=[sself.delegate downloader:sself transformResponseData:data withURL:url];
                                                                              }
-                                                                             NSURL * dataURL=nil;
+                                                                             NSURL * dURL=nil;
                                                                              if(sself.useDiskCache){
-                                                                                 dataURL=[[SDMediaDiskCache sharedDiskCache] store:data forKey:url];
+                                                                                 dURL=[[SDMediaDiskCache sharedDiskCache] store:data forKey:url];
+                                                                                 if (sself.delegate&&[sself.delegate respondsToSelector:@selector(downloader:resonseError:dataURL:withURL:)]) {
+                                                                                     [sself.delegate downloader:sself resonseError:nil dataURL:dURL withURL:url];
+                                                                                 }
                                                                              }
                                                                              if (sself.delegate&&[sself.delegate respondsToSelector:@selector(downloader:generateImageByDataURL:forImageURL:success:)]) {
                                                                                  
-                                                                                 [sself.delegate downloader:sself generateImageByDataURL:dataURL  forImageURL:imageURL success:^(UIImage * img, NSError * err) {
+                                                                                 [sself.delegate downloader:sself generateImageByDataURL:dURL  forImageURL:imageURL success:^(UIImage * img, NSError * err) {
                                                                                      [sself doComplete:url image:img data:nil error:nil finished:YES];
 
                                                                                  }];

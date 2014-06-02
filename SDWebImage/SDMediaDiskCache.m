@@ -9,7 +9,7 @@
 #import "SDMediaDiskCache.h"
 #import <CommonCrypto/CommonDigest.h>
 #import "SDWebImageDecoder.h"
-
+#include <sys/xattr.h>
 
 @interface SDMediaDiskCache(){
     NSFileManager *_fileManager;
@@ -35,32 +35,45 @@
     return instance;
 }
 
+- (void) addSkipBackupAttributeToFile: (NSURL*) url //文件的URL
+{    u_int8_t b = 1;
+    setxattr([[url path] fileSystemRepresentation], "com.apple.MobileBackup", &b, 1, 0, 0);
+}
+
 -(id)init{
     self=[super init];
     if (self) {
         _ioQueue = dispatch_queue_create("com.hackemist.SDWebImageCache", DISPATCH_QUEUE_SERIAL);
-        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
         _diskCachePath = [paths[0] stringByAppendingPathComponent:@"MediaCache"];
-        _fileManager = [NSFileManager new];
-        if (![_fileManager fileExistsAtPath:_diskCachePath]) {
-            [_fileManager createDirectoryAtPath:_diskCachePath withIntermediateDirectories:YES attributes:nil error:NULL];
-        }
+        dispatch_sync(_ioQueue, ^{
+            _fileManager = [NSFileManager new];
+            if (![_fileManager fileExistsAtPath:_diskCachePath]) {
+                [_fileManager createDirectoryAtPath:_diskCachePath withIntermediateDirectories:YES attributes:nil error:NULL];
+                NSURL * urlpath=[NSURL fileURLWithPath:_diskCachePath];
+                [self addSkipBackupAttributeToFile:urlpath];
+            }
+        });
+        self.cache=[NSCache new];
     }
     return self;
+}
+
+-(void)storeDataURL:(NSURL*)dataURL forKey:(NSURL*)url{
+    [self.cache setObject:dataURL forKey:url];
 }
 
 -(NSURL*)store:(NSData*)data forKey:(NSURL*)url{
     if (!data) {
         return nil;
     }
+    NSString * path=[self defaultCachePathForKey:url];
     dispatch_sync(self.ioQueue, ^{
-        NSString * path=[self defaultCachePathForKey:url.absoluteString];
         [_fileManager createFileAtPath:path contents:data attributes:nil];
-        [self.cache setObject:[NSURL fileURLWithPath:path] forKey:url];
     });
-    return [self dataURL:url];
-    
-    
+    NSURL * dataURL=[NSURL fileURLWithPath:path];
+    [self.cache setObject:dataURL forKey:url];
+    return dataURL;
 }
 
 
@@ -69,12 +82,13 @@
 }
 
 
-- (NSString *)cachePathForKey:(NSString *)key inPath:(NSString *)path {
-    NSString *filename = [self cachedFileNameForKey:key];
-    return [path stringByAppendingPathComponent:filename];
+- (NSString *)cachePathForKey:(NSURL *)key inPath:(NSString *)path {
+    NSString *filename = [self cachedFileNameForKey:key.absoluteString];
+    NSString * ext=key.pathExtension;
+    return [path stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.%@",filename,ext]];
 }
 
-- (NSString *)defaultCachePathForKey:(NSString *)key {
+- (NSString *)defaultCachePathForKey:(NSURL*)key {
     return [self cachePathForKey:key inPath:self.diskCachePath];
 }
 

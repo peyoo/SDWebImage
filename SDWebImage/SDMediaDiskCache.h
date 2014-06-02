@@ -12,8 +12,9 @@
 
 + (SDMediaDiskCache *)sharedDiskCache;
 
--(NSURL*)store:(NSData*)data forKey:(NSURL*)url;
+-(void)storeDataURL:(NSURL*)dataURL forKey:(NSURL*)url;
 
+-(NSURL*)store:(NSData*)data forKey:(NSURL*)url;
 
 -(NSURL*)dataURL:(NSURL*)key;
 
