@@ -127,16 +127,21 @@ static NSString *const kCompletedCallbackKey = @"completed";
             dataURL=[wself.delegate downloader:wself mediaDataURLforURL:url];
         }
         if (dataURL) {
+            if (wself.delegate&&[wself.delegate respondsToSelector:@selector(downloader:resonseError:dataURL:withURL:)]) {
+                dispatch_async(dispatch_get_global_queue(0, 0), ^{
+                    [wself.delegate downloader:wself resonseError:nil dataURL:dataURL withURL:url];
+                });
+            }
             if (wself.delegate&&[wself.delegate respondsToSelector:@selector(downloader:generateImageByDataURL:forImageURL:success:)]) {
                 [wself.delegate downloader:wself generateImageByDataURL:dataURL forImageURL:imageURL success:^(UIImage * image, NSError * error) {
-                    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+                    dispatch_async(dispatch_get_global_queue(0, 0), ^{
                         [wself doComplete:url image:image data:nil error:error finished:YES];
                     });
                 }];
             }else{
                 NSData * data =[NSData dataWithContentsOfURL:dataURL];
                 UIImage * image=[UIImage imageWithData:data];
-                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+                dispatch_async(dispatch_get_global_queue(0, 0), ^{
                     [wself doComplete:url image:image  data:data error:nil finished:YES];
                 });
                 
@@ -194,6 +199,9 @@ static NSString *const kCompletedCallbackKey = @"completed";
                                                                              
                                                                              if (sself.delegate&&[sself.delegate respondsToSelector:@selector(downloader:transformResponseData:withURL:)]) {
                                                                                  data=[sself.delegate downloader:sself transformResponseData:data withURL:url];
+                                                                                 if (!data) {
+                                                                                     
+                                                                                 }
                                                                              }
                                                                              NSURL * dURL=nil;
                                                                              if(sself.useDiskCache){
