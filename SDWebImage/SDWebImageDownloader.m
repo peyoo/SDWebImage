@@ -171,8 +171,6 @@ static NSString *const kCompletedCallbackKey = @"completed";
         else {
             request.allHTTPHeaderFields = wself.HTTPHeaders;
         }
-        
-        
         operation = [[SDWebImageDownloaderOperation alloc] initWithRequest:request
                                                                    options:options
                                                                   progress:^(NSInteger receivedSize, NSInteger expectedSize) {
