@@ -34,6 +34,8 @@
     size_t width, height;
     UIImageOrientation orientation;
     BOOL responseFromCached;
+    BOOL _executing;
+    BOOL _finished;
 }
 
 - (id)initWithRequest:(NSURLRequest *)request options:(SDWebImageDownloaderOptions)options progress:(void (^)(NSInteger, NSInteger))progressBlock completed:(void (^)(UIImage *, NSData *, NSError *, BOOL))completedBlock cancelled:(void (^)())cancelBlock {
